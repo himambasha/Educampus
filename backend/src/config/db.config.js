@@ -1,25 +1,15 @@
 const mongoose = require('mongoose');
 
 /**
- * Connects to MongoDB using the URI from environment variables.
- * Call this once when the server starts (see src/server.js).
+ * Connects to MongoDB using MONGO_URI from .env with a local fallback.
  */
 const connectDB = async () => {
   try {
-    const mongoUri = process.env.MONGO_URI;
+    const mongoUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/educampus';
+    
+    const conn = await mongoose.connect(mongoUri);
 
-    if (!mongoUri) {
-      throw new Error('MONGO_URI is not defined in environment variables');
-    }
-
-    const conn = await mongoose.connect(mongoUri, {
-      // Mongoose 6+ no longer needs useNewUrlParser / useUnifiedTopology,
-      // but kept here as comments in case you're on an older version:
-      // useNewUrlParser: true,
-      // useUnifiedTopology: true,
-    });
-
-    console.log(`MongoDB connected: ${conn.connection.host}`);
+    console.log(`MongoDB Connected: ${conn.connection.host}`);
 
     mongoose.connection.on('error', (err) => {
       console.error(`MongoDB connection error: ${err}`);

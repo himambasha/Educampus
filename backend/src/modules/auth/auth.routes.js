@@ -3,12 +3,26 @@ const router = express.Router();
 
 const authController = require('./auth.controller');
 const validate = require('../../middlewares/validate.middleware');
+const { register, login, getMe } = require('./auth.controller');
+const { protect } = require('../../middlewares/auth.middleware');
 const {
   registerSchema,
   loginRequestOtpSchema,
   verifyOtpSchema,
   resendOtpSchema,
 } = require('./auth.validation');
+
+router.post('/login', (req, res) => {
+  // login logic
+});
+router.post('/register', register);
+router.post('/login', login);
+router.get('/me', protect, getMe);
+
+//module.exports = router;
+
+// MUST BE module.exports = router
+module.exports = router;
 
 // Registration - Step 1: submit details, receive OTP
 router.post('/register', validate(registerSchema), authController.register);

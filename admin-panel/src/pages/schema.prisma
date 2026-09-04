@@ -1,0 +1,183 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// --------------------------------------
+// Enums
+// --------------------------------------
+
+enum Role {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+// --------------------------------------
+// User & Authentication Models
+// --------------------------------------
+model User {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("ADMIN") // ADMIN, INSTRUCTOR, STUDENT
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+/*
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  password      String
+  role          Role      @default(STUDENT)
+  isVerified    Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  studentProfile StudentProfile?
+  teacherProfile TeacherProfile?
+
+  @@map("users")
+}*/
+
+model StudentProfile {
+  id             String       @id @default(uuid())
+  userId         String       @unique
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName      String
+  lastName       String
+  rollNumber     String       @unique
+  department     String
+  semester       Int
+
+  enrollments    Enrollment[]
+  attendances    Attendance[]
+  submissions    Submission[]
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@map("student_profiles")
+}
+
+model TeacherProfile {
+  id             String       @id @default(uuid())
+  userId         String       @unique
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName      String
+  lastName       String
+  employeeId     String       @unique
+  department     String
+
+  courses        Course[]
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@map("teacher_profiles")
+}
+
+// --------------------------------------
+// Academic & Course Models
+// --------------------------------------
+
+model Course {
+  id             String          @id @default(uuid())
+  code           String          @unique
+  title          String
+  description    String?
+  credits        Int
+  
+  teacherId      String
+  teacher        TeacherProfile  @relation(fields: [teacherId], references: [id])
+
+  enrollments    Enrollment[]
+  assignments    Assignment[]
+  attendances    Attendance[]
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@map("courses")
+}
+
+model Enrollment {
+  id             String          @id @default(uuid())
+  studentId      String
+  student        StudentProfile  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  courseId       String
+  course         Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  enrolledAt     DateTime        @default(now())
+
+  @@unique([studentId, courseId])
+  @@map("enrollments")
+}
+
+// --------------------------------------
+// Assignments & Attendance
+// --------------------------------------
+
+model Assignment {
+  id             String       @id @default(uuid())
+  title          String
+  description    String?
+  dueDate        DateTime
+  maxScore       Int          @default(100)
+
+  courseId       String
+  course         Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  submissions    Submission[]
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@map("assignments")
+}
+
+model Submission {
+  id             String         @id @default(uuid())
+  fileUrl        String?
+  content        String?
+  score          Float?
+  
+  assignmentId   String
+  assignment     Assignment     @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  
+  studentId      String
+  student        StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  submittedAt    DateTime       @default(now())
+
+  @@unique([assignmentId, studentId])
+  @@map("submissions")
+}
+
+model Attendance {
+  id             String           @id @default(uuid())
+  date           DateTime         @db.Date
+  status         AttendanceStatus @default(PRESENT)
+
+  courseId       String
+  course         Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  studentId      String
+  student        StudentProfile   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, studentId, date])
+  @@map("attendances")
+}

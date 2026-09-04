@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 
 const errorMiddleware = require('./middlewares/error.middleware');
 const storageConfig = require('./config/storage.config');
@@ -8,23 +7,32 @@ const storageConfig = require('./config/storage.config');
 // Route imports
 const authRoutes = require('./modules/auth/auth.routes');
 const userRoutes = require('./modules/user/user.routes');
-// const cmsRoutes = require('./modules/cms/cms.routes');
-// const subscriptionRoutes = require('./modules/subscription/subscription.routes');
-// const feedbackRoutes = require('./modules/feedback/feedback.routes');
 const examRoutes = require('./modules/exam/exam.routes');
-// const adminSubscriptionRoutes = require('./admin/subscription/adminSubscription.routes');
-// const adminCmsRoutes = require('./admin/cms/adminCms.routes');
-// const adminExamRoutes = require('./admin/exam/adminExam.routes');
+const databaseRoutes = require('./modules/admin/database.routes');
+
+// Helper function to safely extract router/function if wrapped in an object
+const getMiddleware = (mod) => {
+  if (typeof mod === 'function') return mod;
+  if (mod && typeof mod.default === 'function') return mod.default;
+  if (mod && typeof mod.router === 'function') return mod.router;
+  return mod;
+};
+
+const authRouter = getMiddleware(authRoutes);
+const userRouter = getMiddleware(userRoutes);
+const examRouter = getMiddleware(examRoutes);
+const databaseRouter = getMiddleware(databaseRoutes);
+const errorHandler = getMiddleware(errorMiddleware);
 
 const app = express();
 
 // ---------- Core middleware ----------
-app.use(cors());
+app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ---------- Static file serving (for local profile pictures) ----------
-if (storageConfig.driver === 'local') {
+// ---------- Static file serving ----------
+if (storageConfig && storageConfig.driver === 'local') {
   app.use(
     storageConfig.local.publicUrlPrefix,
     express.static(storageConfig.local.uploadDir)
@@ -40,26 +48,23 @@ app.get('/', (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ success: true, message: 'Educampus API is running' });
+  res.status(200).json({ success: true, message: 'Educampus API is up and running!' });
 });
 
 // ---------- API Routes ----------
-app.use('/api/auth', authRoutes);
-app.use('/api/user', userRoutes);
-// app.use('/api/cms', cmsRoutes);
-// app.use('/api/subscriptions', subscriptionRoutes);
-// app.use('/api/feedback', feedbackRoutes);
-// app.use('/api/exams', examRoutes);
-// app.use('/api/admin/subscriptions', adminSubscriptionRoutes);
-// app.use('/api/admin/cms', adminCmsRoutes);
-// app.use('/api/admin/exams', adminExamRoutes);
+if (typeof authRouter === 'function') app.use('/api/auth', authRouter);
+if (typeof userRouter === 'function') app.use('/api/user', userRouter);
+if (typeof examRouter === 'function') app.use('/api/exams', examRouter);
+if (typeof databaseRouter === 'function') app.use('/api/admin/database', databaseRouter);
 
-// ---------- 404 handler (Must be below all valid routes) ----------
+// ---------- 404 handler ----------
 app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Route not found' });
 });
 
-// ---------- Centralized error handler (Must be last middleware) ----------
-app.use(errorMiddleware);
+// ---------- Centralized error handler ----------
+if (typeof errorHandler === 'function') {
+  app.use(errorHandler);
+}
 
 module.exports = app;

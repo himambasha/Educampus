@@ -1,10 +1,41 @@
 const userService = require('./user.service');
 const { success, error } = require('../../utils/response.util');
-
+const prisma = require('../../config/prisma.config');
 /**
  * GET /api/user/profile
  * Requires auth middleware - expects req.user.userId to be set.
  */
+ const getUsers = async (req, res, next) => {
+  try {
+    const users = await prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+
+    res.status(200).json({
+      success: true,
+      count: users.length,
+      data: users,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const createUser = async (req, res, next) => {
+  try {
+    const { name, email } = req.body;
+    const newUser = await prisma.user.create({
+      data: { name, email },
+    });
+
+    res.status(201).json({
+      success: true,
+      data: newUser,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 async function getProfile(req, res) {
   try {
     const user = await userService.getProfile(req.user.userId);

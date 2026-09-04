@@ -1,113 +1,92 @@
-const authService = require('./auth.service');
-const { success, error } = require('../../utils/response.util');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const prisma = require('../../config/prisma.config');
 
-/**
- * POST /api/auth/register
- * Step 1 of registration: validate details, send OTP to mobile.
- * User is NOT created yet - creation happens after OTP verification.
- */
-async function register(req, res) {
+const JWT_SECRET = process.env.JWT_SECRET || 'educampus_secret_key';
+
+// Register User
+const register = async (req, res, next) => {
   try {
-    const { name, email, mobile } = req.body;
+    const { name, email, password, role } = req.body;
 
-    await authService.requestOtp({
-      identifier: mobile,
-      identifierType: 'mobile',
-      purpose: 'register',
-    });
-
-    // Temporarily stash registration details in the OTP flow via response;
-    // client re-submits name/email/mobile again during verify-otp call.
-    return success(res, { name, email, mobile }, 'OTP sent to mobile number for verification');
-  } catch (err) {
-    return error(res, err.message);
-  }
-}
-
-/**
- * POST /api/auth/login/request-otp
- * Sends OTP to the given email or mobile for login.
- */
-async function requestLoginOtp(req, res) {
-  try {
-    const { email, mobile } = req.body;
-    const identifier = email || mobile;
-    const identifierType = email ? 'email' : 'mobile';
-
-    // Ensure the account exists before sending OTP
-    await authService.findUserForLogin({ email, mobile });
-
-    await authService.requestOtp({ identifier, identifierType, purpose: 'login' });
-
-    return success(res, null, `OTP sent to ${identifierType}`);
-  } catch (err) {
-    return error(res, err.message);
-  }
-}
-
-/**
- * POST /api/auth/verify-otp
- * Verifies OTP for either 'login' or 'register' purpose.
- * On success: registers the user (if purpose=register) or logs them in,
- * and returns a JWT.
- */
-async function verifyOtp(req, res) {
-  try {
-    const { email, mobile, otp, purpose, name } = req.body;
-    const identifier = email || mobile;
-
-    await authService.verifyOtp({ identifier, otp, purpose });
-
-    let user;
-    if (purpose === 'register') {
-      user = await authService.registerUser({ name, email, mobile });
-    } else {
-      user = await authService.findUserForLogin({ email, mobile });
+    if (!name || !email || !password) {
+      return res.status(400).json({ success: false, message: 'Please provide all required fields' });
     }
 
-    const token = authService.issueToken(user);
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: 'Email is already registered' });
+    }
 
-    return success(res, { token, user }, 'Verification successful');
-  } catch (err) {
-    return error(res, err.message);
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const user = await prisma.user.create({
+      data: {
+        name,
+        email,
+        password: hashedPassword,
+        role: role || 'ADMIN',
+      },
+    });
+
+    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+
+    res.status(201).json({
+      success: true,
+      message: 'User registered successfully',
+      token,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    });
+  } catch (error) {
+    next(error);
   }
-}
-
-/**
- * POST /api/auth/resend-otp
- */
-async function resendOtp(req, res) {
-  try {
-    const { email, mobile, purpose } = req.body;
-    const identifier = email || mobile;
-    const identifierType = email ? 'email' : 'mobile';
-
-    await authService.requestOtp({ identifier, identifierType, purpose });
-
-    return success(res, null, 'OTP resent successfully');
-  } catch (err) {
-    return error(res, err.message);
-  }
-}
-
-/**
- * POST /api/auth/logout
- * Stateless JWT logout - client discards the token.
- * If using refresh tokens / token blacklist, invalidate here instead.
- */
-async function logout(req, res) {
-  try {
-    // If maintaining a token blacklist or refresh-token store, clear it here.
-    return success(res, null, 'Logged out successfully');
-  } catch (err) {
-    return error(res, err.message);
-  }
-}
-
-module.exports = {
-  register,
-  requestLoginOtp,
-  verifyOtp,
-  resendOtp,
-  logout,
 };
+
+// Login User
+const login = async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'Email and password are required' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Invalid email or password' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: 'Invalid email or password' });
+    }
+
+    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+
+    res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      token,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Get Current Profile
+const getMe = async (req, res, next) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { id: true, name: true, email: true, role: true, createdAt: true },
+    });
+
+    res.status(200).json({ success: true, user });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { register, login, getMe };
